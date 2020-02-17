@@ -169,7 +169,7 @@ impl<T> NClist<T> where T: Interval {
             Ok(n) => n + 1,
             Err(n) => n
         };
-        SlicedNClist { intervals: &self.intervals[start..end], contained: &self.contained[start+1..end+1], stop_at: q_end }
+        SlicedNClist { intervals: &self.intervals[start..end], contained: &self.contained[start+1..=end], stop_at: q_end }
     }
 
     #[inline]
@@ -302,12 +302,12 @@ mod tests {
     use super::*;
 
     #[test]
-    // This test including the comment below in copies from Rust's stdlib. This software relies on
-    // the fact that the last matching element is returned. If the stdlib implementation changes
-    // this should be caught.
+    // This test including the comment below is copied from Rust's stdlib. This software relies on
+    // the fact that a binary search returns the last matching element. If the stdlib
+    // implementation changes this should be caught.
     //
-    // Test implementation specific behavior when finding equivalent elements.
-    // It is ok to break this test but when you do a crater run is highly advisable.
+    // See:
+    // https://github.com/rust-lang/rust/blob/975e83a32ad8c2c894391711d227786614d61a50/src/libcore/tests/slice.rs#L68
     fn test_binary_search_implementation_details() {
         let b = [1, 1, 2, 2, 3, 3, 3];
         assert_eq!(b.binary_search(&1), Ok(1));
