@@ -54,7 +54,6 @@
 //! (sorted) lists (gff, gtf, bed) the `NClist<T>` is a perfect fit and has very nice ergonomics.
 //!
 //! Obviously the implemtation works better when nesting depth is limited.
-extern crate itertools;
 use std::collections::VecDeque;
 use std::ops::Range;
 

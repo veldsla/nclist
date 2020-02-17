@@ -1,11 +1,6 @@
-#[macro_use]
-extern crate criterion;
-extern crate nclist;
-extern crate rand;
-
 use std::ops::Range;
 
-use criterion::Criterion;
+use criterion::{Criterion, criterion_main, criterion_group};
 use nclist::NClist;
 use rand::Rng;
 
