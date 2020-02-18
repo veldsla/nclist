@@ -1,7 +1,7 @@
 [package]
 name = "nclist"
 description = "Crate for finding overlapping intervals using a nested containment list"
-version = "0.1.0"
+version = "0.1.1"
 license = "MIT"
 authors = ["Arno Velds <a.velds@nki.nl>"]
 readme = "README.md"
