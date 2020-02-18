@@ -2,6 +2,7 @@
 name = "nclist"
 version = "0.1.0"
 authors = ["Arno Velds <a.velds@nki.nl>"]
+readme = "README.md"
 edition = "2018"
 
 [dependencies]
