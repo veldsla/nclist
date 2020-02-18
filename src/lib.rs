@@ -9,22 +9,23 @@
 //! sorted on their start coordinate are also sorted on their end coordinate. If this requirement
 //! is fulfilled the items overlapping an interval can be found by a binary search on the query
 //! start and returning items until the query end coordinate has been passed, giving a complexity
-//! of `O(log N + M)` where N is the size of the set and M is the number of overlaps.
+//! of `O(log(N) + M)` where N is the size of the set and M is the number of overlaps.
 //!
 //! The only remaining problem is the intervals that **are** contained in another interval. This was
 //! solved by taking out these intervals and storing them in a separate set, linking this set to the
 //! original interval. Now when you search for overlaps you check for contained intervals and also
 //! search these nested sets. This can be implemented recursively (as shown in the paper) or
-//! using a queue (which was used for this crate).
+//! using a queue (which was used for this crate). This means that the worst case complexity becomes
+//! O(N) if all intervals are contained within its parent
 //!
 //! The linked article also provides details about an on-disk version that can also be efficiently
 //! searched, but this crate implementation is in-memory and stores the items in a (single) `Vec`.
 //!
 //! # How to use
-//! You can create a searchable `NClist<T>` from a `Vec<T>` if you implement the `Interval` trait
-//! for `T` The `Interval` trait also requires that `T` is `Ord`. Creating the NClist validates
-//! that the end coordinate is greater than start. This means negative and zero-width intervals
-//! cannot be used in an `NClist<T>`. 
+//! You can create a searchable `NClist<T>` from a `Vec<T>` if you implement the
+//! `Interval` trait for `T` The `Interval` trait also requires that `T` is `Ord`. Creating the
+//! NClist validates that the end coordinate is greater than start. This means negative and
+//! zero-width intervals cannot be used in an `NClist<T>`.
 //!
 //! # Example
 //! ```
@@ -32,7 +33,7 @@
 //! // Given a set of `T` where `T` implements the `Interval` trait
 //! let v = vec![(10..15), (10..20), (1..8)];
 //! // Create the NClist, this consumes v
-//! let nc = NClist::from(v);
+//! let nc = NClist::from_vec(v).unwrap();
 //! // count overlaps, the query is provided as a reference to a `std::ops::Range`
 //! assert_eq!(nc.count_overlaps(&(10..12)), 2);
 //! // remember, intervals are half open
@@ -44,17 +45,17 @@
 //! assert_eq!(q.next(), None);
 //!
 //! ```
-//! More examples can be found in the `examples` directory on Github
 //!
 //! # Recommendations for use
-//! The `NClist<T>` is not mutable. Any mutable access to the items in the could invalidate the interval
-//! bounds (interior mutability using for example a `RefCell` could solve this). Also insertion and
-//! deletion are not supported. I can speculate that an interval tree would also be a better for
-//! this type of access. For usage in Bioinformatics where interval data is often provided as
-//! (sorted) lists (gff, gtf, bed) the `NClist<T>` is a perfect fit and has very nice ergonomics.
-//!
-//! Obviously the implemtation works better when nesting depth is limited.
+//! The `NClist<T>` is not mutable. Any mutable access to the items could invalidate the
+//! interval bounds (interior mutability using for example a `RefCell` could solve this). Also
+//! insertion and deletion are not supported. I can speculate that an interval tree would also be a
+//! better for this type of access. For usage in bioinformatics where interval data is often
+//! provided as (sorted) lists (gff, gtf, bed) the `NClist<T>` is a perfect fit and has very nice
+//! ergonomics.  Obviously the implementation works better when nesting depth is limited, but
+//! performance in simple tests seem consistently better than rust-bio's IntervalTree
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 use std::ops::Range;
 
 use itertools::Itertools;
@@ -118,6 +119,22 @@ pub struct OrderedOverlaps<'a, T> where T: 'a + Interval {
 impl<T> NClist<T> where T: Interval {
     fn new() -> NClist<T> {
         NClist { intervals: Vec::new(), contained: vec![Some((0,0))] }
+    }
+
+    pub fn from_vec(mut v: Vec<T>) -> Result<NClist<T>, &'static str> {
+        if v.iter().any(|e| e.end() <= e.start()) {
+            return Err("Cannot use intervals with zero or negative width");
+        }
+        v.sort_by(|a, b| a.start().cmp(b.start())
+                  .then(a.end().cmp(b.end()).reverse()));
+
+        let mut list = NClist::new();
+        let mut sublists = VecDeque::from(vec![NClistBuilder { intervals: v, contained_pos: 0}]);
+
+        while !sublists.is_empty() {
+            build_nclist(&mut sublists, &mut list);
+        }
+        Ok(list)
     }
 
     /// Count the number of elements overlapping the `Range` r. Counting overlaps is slightly
@@ -285,22 +302,10 @@ fn build_nclist<T: Interval>(sublists: &mut VecDeque<NClistBuilder<T>>, result: 
     }
 }
 
-/// This is currently the only way to create an `NClist<T>`.
-impl<T> From<Vec<T>> for NClist<T> where T: Interval {
-    fn from(mut v: Vec<T>) -> Self {
-        if v.iter().any(|e| e.end() <= e.start()) {
-            panic!("Cannot use intervals with zero or negative width");
-        }
-        v.sort_by(|a, b| a.start().cmp(b.start())
-                  .then(a.end().cmp(b.end()).reverse()));
-
-        let mut list = NClist::new();
-        let mut sublists = VecDeque::from(vec![NClistBuilder { intervals: v, contained_pos: 0}]);
-
-        while !sublists.is_empty() {
-            build_nclist(&mut sublists, &mut list);
-        }
-        list
+impl<T> TryFrom<Vec<T>> for NClist<T> where T: Interval {
+    type Error = &'static str;
+    fn try_from(v: Vec<T>) -> Result<Self, Self::Error> {
+        NClist::from_vec(v)
     }
 }
 
@@ -339,7 +344,7 @@ mod tests {
     #[test]
     fn from_vec() {
         let list: Vec<Range<u64>> = vec![(10..15), (10..20), (1..8)].into_iter().collect();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
 
         assert_eq!(nclist.intervals.len(), 3);
         assert!(nclist.contained[0].is_some());
@@ -348,21 +353,22 @@ mod tests {
         assert!(nclist.contained[3].is_none());
 
         let list: Vec<Range<u64>> = Vec::new();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
         assert_eq!(nclist.intervals.len(), 0);
     }
 
     #[test]
-    #[should_panic]
     fn interval_width() {
         let list: Vec<Range<u64>> = vec![(5..20), (19..20), (7..7)].into_iter().collect();
-        let _nclist = NClist::from(list);
+        assert!(NClist::from_vec(list).is_err());
+        let list: Vec<Range<u64>> = vec![(5..20), (20..19), (7..8)].into_iter().collect();
+        assert!(NClist::from_vec(list).is_err());
     }
 
     #[test]
     fn illegal_width_queries() {
         let list: Vec<Range<u64>> = vec![(5..20), (19..20), (7..8)].into_iter().collect();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
         assert_eq!(nclist.count_overlaps(&(7..7)), 0);
         assert_eq!(nclist.count_overlaps(&(8..7)), 0);
         assert_eq!(nclist.count_overlaps(&(19..19)), 0);
@@ -377,7 +383,7 @@ mod tests {
     #[test]
     fn count() {
         let list: Vec<Range<u64>> = vec![(10..15), (10..20), (1..8)].into_iter().collect();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
 
         assert_eq!(nclist.intervals.len(), 3);
         assert_eq!(nclist.count_overlaps(&(5..20)), 3);
@@ -391,14 +397,14 @@ mod tests {
         assert_eq!(nclist.count_overlaps(&(20..100)), 0);
 
         let list: Vec<Range<u64>> = Vec::new();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
         assert_eq!(nclist.count_overlaps(&(100..200)), 0);
 
     }
     #[test]
     fn overlaps() {
         let list: Vec<Range<u64>> = vec![(10..15), (10..20), (1..8)].into_iter().collect();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
 
         assert_eq!(nclist.intervals.len(), 3);
         assert_eq!(nclist.overlaps(&(5..20)).count(), 3);
@@ -417,7 +423,7 @@ mod tests {
     #[test]
     fn duplicate_intervals() {
         let list: Vec<Range<u64>> = vec![(10..15), (11..13), (10..20), (1..8), (11..13), (16..18)].into_iter().collect();
-        let nclist = NClist::from(list);
+        let nclist = NClist::from_vec(list).unwrap();
         println!("{:?}", nclist);
 
         assert_eq!(nclist.overlaps(&(5..20)).count(), 6);

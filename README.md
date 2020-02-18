@@ -26,7 +26,7 @@ searched, but this crate implementation is in-memory and stores the items in a (
 You can create a searchable `NClist<T>` from a `Vec<T>` if you implement the `Interval` trait
 for `T` The `Interval` trait also requires that `T` is `Ord`. Creating the NClist validates
 that the end coordinate is greater than start. This means negative and zero-width intervals
-cannot be used in an `NClist<T>` and will panic.
+cannot be used in an `NClist<T>`.
 
 ## Example
 ```rust
@@ -34,7 +34,7 @@ use nclist::NClist;
 // Given a set of `T` where `T` implements the `Interval` trait
 let v = vec![(10..15), (10..20), (1..8)];
 // Create the NClist, this consumes v
-let nc = NClist::from(v);
+let nc = NClist::from_vec(v);
 // count overlaps, the query is provided as a reference to a `std::ops::Range`
 assert_eq!(nc.count_overlaps(&(10..12)), 2);
 // remember, intervals are half open

@@ -22,7 +22,7 @@ fn query_nclist<T: Ord>(nclist: &NClist<Range<T>>, q: &[Range<T>]) {
 fn test_nc(c:  &mut Criterion) {
     // 100 ranges of size 100-200 (total size 10-20K in 10K space)
     let ranges = make_ranges(100, 100, 200, 10_000);
-    let nclist = NClist::from(ranges);
+    let nclist = NClist::from_vec(ranges).unwrap();
 
     // Query 100 short ranges
     let q = make_ranges(100,10,50,10_000);
@@ -32,7 +32,7 @@ fn test_nc(c:  &mut Criterion) {
 
 fn test_nc_overlaps(c:  &mut Criterion) {
     let ranges: Vec<_> = (100..2000).step_by(200).map(|p| make_ranges(1000, 50, p, 10_000)).collect();
-    let nclists: Vec<_> = ranges.into_iter().map(|r| NClist::from(r)).collect();
+    let nclists: Vec<_> = ranges.into_iter().map(|r| NClist::from_vec(r).unwrap()).collect();
 
     let q = make_ranges(100,10,50,10_000);
 
