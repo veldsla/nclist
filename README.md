@@ -47,7 +47,8 @@ assert_eq!(q.next(), None);
 
 ```
 
-## Recommendations for use The `NClist<T>` is not mutable. Any mutable access
+## Recommendations for use
+The `NClist<T>` is not mutable. Any mutable access
 to the items could invalidate the interval bounds (interior mutability using
 for example a `RefCell` could solve this). Also insertion and deletion are not
 supported. I can speculate that an interval tree would also be a better for
