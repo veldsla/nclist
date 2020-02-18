@@ -10,13 +10,14 @@ non-contained (based on their interval bounds) in any of the other intervals in 
 sorted on their start coordinate are also sorted on their end coordinate. If this requirement
 is fulfilled the items overlapping an interval can be found by a binary search on the query
 start and returning items until the query end coordinate has been passed, giving a complexity
-of `O(log N + M)` where N is the size of the set and M is the number of overlaps.
+of `O(log(N) + M)` where N is the size of the set and M is the number of overlaps.
 
 The only remaining problem is the intervals that **are** contained in another interval. This was
 solved by taking out these intervals and storing them in a separate set, linking this set to the
 original interval. Now when you search for overlaps you check for contained intervals and also
 search these nested sets. This can be implemented recursively (as shown in the paper) or
-using a queue (which was used for this crate).
+using a queue (which was used for this crate). This means that the worst case complexity becomes
+O(N) if all intervals are contained within its parent.
 
 The linked article also provides details about an on-disk version that can also be efficiently
 searched, but this crate implementation is in-memory and stores the items in a (single) `Vec`.
@@ -25,7 +26,7 @@ searched, but this crate implementation is in-memory and stores the items in a (
 You can create a searchable `NClist<T>` from a `Vec<T>` if you implement the `Interval` trait
 for `T` The `Interval` trait also requires that `T` is `Ord`. Creating the NClist validates
 that the end coordinate is greater than start. This means negative and zero-width intervals
-cannot be used in an `NClist<T>`. 
+cannot be used in an `NClist<T>` and will panic.
 
 ## Example
 ```rust
@@ -45,13 +46,14 @@ assert_eq!(q.next(), Some(&(1..8)));
 assert_eq!(q.next(), None);
 
 ```
-More examples can be found in the `examples` directory on Github
 
-## Recommendations for use
-The `NClist<T>` is not mutable. Any mutable access to the items in the could invalidate the interval
-bounds (interior mutability using for example a `RefCell` could solve this). Also insertion and
-deletion are not supported. I can speculate that an interval tree would also be a better for
-this type of access. For usage in Bioinformatics where interval data is often provided as
-(sorted) lists (gff, gtf, bed) the `NClist<T>` is a perfect fit and has very nice ergonomics.
+## Recommendations for use The `NClist<T>` is not mutable. Any mutable access
+to the items could invalidate the interval bounds (interior mutability using
+for example a `RefCell` could solve this). Also insertion and deletion are not
+supported. I can speculate that an interval tree would also be a better for
+this type of access. For usage in bioinformatics where interval data is often
+provided as (sorted) lists (gff, gtf, bed) the `NClist<T>` is a perfect fit and
+has very nice ergonomics.  Obviously the implementation works better when
+nesting depth is limited, but performance in simple tests seem consistently
+better than rust-bio's IntervalTree.
 
-Obviously the implemtation works better when nesting depth is limited.

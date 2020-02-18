@@ -124,6 +124,9 @@ impl<T> NClist<T> where T: Interval {
     /// faster than iterating over the overlaps. This method is preferred when only the number of
     /// overlapping elements is required.
     pub fn count_overlaps(&self, r: &Range<T::Coord>) -> usize {
+        if r.end <= r.start {
+            return 0;
+        }
         let mut count = 0;
         let mut queue = VecDeque::new();
         queue.push_back(self.contained[0].unwrap());
@@ -139,10 +142,17 @@ impl<T> NClist<T> where T: Interval {
         count
     }
 
-    /// Returns an iterator that returns overlapping elements to query `r`
+    /// Returns an iterator that returns overlapping elements to query `r`. During iteration
+    /// contained intervals are pushed to a queue an processed in order after yielding the
+    /// non-overlapping regions.
     pub fn overlaps<'a>(&'a self, r: &'a Range<T::Coord>) -> Overlaps<'a , T> {
         let current_slice = self.contained[0].as_ref().unwrap();
-        let start = self.bin_search_end(current_slice.0, current_slice.1, &r.start);
+        //empty or negative width intervals do not overlap anything
+        let start = if r.end > r.start {
+            self.bin_search_end(current_slice.0, current_slice.1, &r.start)
+        } else {
+            current_slice.1
+        };
 
         Overlaps { nclist: self, range: r, current_pos: start, current_end: current_slice.1, sublists: VecDeque::new() }
     }
@@ -151,7 +161,10 @@ impl<T> NClist<T> where T: Interval {
     /// coordinate. This is less efficient that returning without ordering, but doesn't require
     /// allocating storage for all overlapping elements.
     pub fn overlaps_ordered<'a>(&'a self, r: &'a Range<T::Coord>) -> OrderedOverlaps<'a , T> {
-        let &(start, end) = self.contained[0].as_ref().unwrap();
+        let &(mut start, end) = self.contained[0].as_ref().unwrap();
+        if r.end <= r.start {
+            start = end;
+        }
         OrderedOverlaps { nclist: self, range: r, current: self.slice(start, end, &r.start, &r.end), queue: Vec::new() }
     }
 
@@ -168,7 +181,7 @@ impl<T> NClist<T> where T: Interval {
             Ok(n) => n + 1,
             Err(n) => n
         };
-        SlicedNClist { intervals: &self.intervals[start..end], contained: &self.contained[start+1..=end], stop_at: q_end }
+        SlicedNClist { intervals: &self.intervals[start..end], contained: &self.contained[start+1..end+1], stop_at: q_end }
     }
 
     #[inline]
@@ -275,6 +288,9 @@ fn build_nclist<T: Interval>(sublists: &mut VecDeque<NClistBuilder<T>>, result: 
 /// This is currently the only way to create an `NClist<T>`.
 impl<T> From<Vec<T>> for NClist<T> where T: Interval {
     fn from(mut v: Vec<T>) -> Self {
+        if v.iter().any(|e| e.end() <= e.start()) {
+            panic!("Cannot use intervals with zero or negative width");
+        }
         v.sort_by(|a, b| a.start().cmp(b.start())
                   .then(a.end().cmp(b.end()).reverse()));
 
@@ -300,13 +316,13 @@ impl<T> Into<Vec<T>> for NClist<T> where T: Interval {
 mod tests {
     use super::*;
 
-    #[test]
-    // This test including the comment below is copied from Rust's stdlib. This software relies on
-    // the fact that a binary search returns the last matching element. If the stdlib
-    // implementation changes this should be caught.
+    // This test is copied from Rust's stdlib. This software relies on the fact that a binary
+    // search returns the last matching element. If the stdlib implementation changes this should
+    // be caught.
     //
     // See:
     // https://github.com/rust-lang/rust/blob/975e83a32ad8c2c894391711d227786614d61a50/src/libcore/tests/slice.rs#L68
+    #[test]
     fn test_binary_search_implementation_details() {
         let b = [1, 1, 2, 2, 3, 3, 3];
         assert_eq!(b.binary_search(&1), Ok(1));
@@ -334,6 +350,28 @@ mod tests {
         let list: Vec<Range<u64>> = Vec::new();
         let nclist = NClist::from(list);
         assert_eq!(nclist.intervals.len(), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn interval_width() {
+        let list: Vec<Range<u64>> = vec![(5..20), (19..20), (7..7)].into_iter().collect();
+        let _nclist = NClist::from(list);
+    }
+
+    #[test]
+    fn illegal_width_queries() {
+        let list: Vec<Range<u64>> = vec![(5..20), (19..20), (7..8)].into_iter().collect();
+        let nclist = NClist::from(list);
+        assert_eq!(nclist.count_overlaps(&(7..7)), 0);
+        assert_eq!(nclist.count_overlaps(&(8..7)), 0);
+        assert_eq!(nclist.count_overlaps(&(19..19)), 0);
+        assert_eq!(nclist.overlaps(&(7..7)).count(), 0);
+        assert_eq!(nclist.overlaps(&(8..7)).count(), 0);
+        assert_eq!(nclist.overlaps(&(19..19)).count(), 0);
+        assert_eq!(nclist.overlaps_ordered(&(7..7)).count(), 0);
+        assert_eq!(nclist.overlaps_ordered(&(8..7)).count(), 0);
+        assert_eq!(nclist.overlaps_ordered(&(19..19)).count(), 0);
     }
 
     #[test]
@@ -369,6 +407,28 @@ mod tests {
         assert_eq!(q.next(), Some(&(1..8)));
         assert_eq!(q.next(), Some(&(10..20)));
         assert_eq!(q.next(), Some(&(10..15)));
+        assert_eq!(q.next(), None);
+
+        assert_eq!(nclist.overlaps(&(20..100)).count(), 0);
+        assert_eq!(nclist.overlaps(&(8..10)).count(), 0);
+        assert_eq!(nclist.overlaps(&(8..9)).count(), 0);
+    }
+
+    #[test]
+    fn duplicate_intervals() {
+        let list: Vec<Range<u64>> = vec![(10..15), (11..13), (10..20), (1..8), (11..13), (16..18)].into_iter().collect();
+        let nclist = NClist::from(list);
+        println!("{:?}", nclist);
+
+        assert_eq!(nclist.overlaps(&(5..20)).count(), 6);
+        assert_eq!(nclist.overlaps(&(11..13)).count(), 4);
+
+        let mut q = nclist.overlaps_ordered(&(11..17));
+        assert_eq!(q.next(), Some(&(10..20)));
+        assert_eq!(q.next(), Some(&(10..15)));
+        assert_eq!(q.next(), Some(&(11..13)));
+        assert_eq!(q.next(), Some(&(11..13)));
+        assert_eq!(q.next(), Some(&(16..18)));
         assert_eq!(q.next(), None);
 
         assert_eq!(nclist.overlaps(&(20..100)).count(), 0);
