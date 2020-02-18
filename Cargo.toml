@@ -5,6 +5,10 @@ version = "0.1.0"
 license = "MIT"
 authors = ["Arno Velds <a.velds@nki.nl>"]
 readme = "README.md"
+repository = "https://github.com/veldsla/nclist"
+homepage = "https://github.com/veldsla/nclist"
+documentation = "https://docs.rs/nclist/"
+keywords = ["nclist", "interval", "range", "overlap"]
 edition = "2018"
 
 [dependencies]
